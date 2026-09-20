@@ -205,7 +205,7 @@ setToastMessage(msg);
 setTimeout(() => setToastMessage(null), 3200);
 };
 
-// Carregar dados no Supabase com tratamento inteligente de CPF
+// Carregar dados no Supabase com tratamento inteligente de CPF e chaves duplas
 useEffect(() => {
 fetchAtletasFromSupabase();
 }, []);
@@ -216,17 +216,20 @@ const { data, error } = await supabase.from('atletas').select('*').order('create
 
 if (!error && data && data.length > 0) {
 const formatted = data.map(item => {
+const rawName = item.name || item.nome || 'Atleta';
+const rawPos = item.pos || item.posicao || 'ATA';
+const rawPhone = item.phone || item.celular || '(00) 00000-0000';
 const rawCpf = item.cpf || item.CPF || item.documento || '';
 const cleanCpf = String(rawCpf).replace(/\D/g, '').padStart(11, '0');
 
 return {
 id: item.id,
-name: item.name || item.nome || 'Atleta',
-pos: item.pos || item.posicao || 'ATA',
+name: rawName,
+pos: rawPos,
 ovr: item.ovr || 75,
-isGoleiro: item.is_goleiro || item.isGoleiro || (item.pos === 'GOL' || item.posicao === 'GOL'),
+isGoleiro: item.is_goleiro || item.isGoleiro || (rawPos === 'GOL'),
 cpf: cleanCpf,
-phone: item.phone || item.celular || '(00) 00000-0000',
+phone: rawPhone,
 paid: item.paid !== undefined ? item.paid : true,
 combo: item.combo !== undefined ? item.combo : true,
 micro: item.micro || item.micro_atributos || { folego: 75, velocidade: 75, forca: 75, controle: 75, passe: 75, finalizacao: 75, marcacao: 75, posicionamento: 75, visao: 75, raca: 75, presenca: 100, pontualidade: 100, pagamento: 100, convivencia: 100 },
@@ -257,7 +260,7 @@ return ['cadastro', 'motor', 'beira', 'portal'];
 return ['beira', 'portal'];
 };
 
-// Login do Atleta com suporte a preenchimento de zeros à esquerda
+// Login do Atleta com suporte a zeros à esquerda
 const handleLogin = (e) => {
 e.preventDefault();
 setLoginError('');
@@ -276,7 +279,7 @@ const digitsOnlyPhone = foundPlayer.phone.replace(/\D/g, '');
 const expectedPin = digitsOnlyPhone.slice(-4);
 
 if (pinInput !== expectedPin && pinInput !== '1234') {
-setLoginError(`PIN incorreto. Dica: use os 4 últimos dígitos do seu celular cadastrado (${expectedPin}).`);
+setLoginError(`PIN incorreto. Dica: use os 4 últimos dígitos do celular cadastrado (${expectedPin}).`);
 setIsLoggingIn(false);
 return;
 }
@@ -321,7 +324,7 @@ const cmpAvg = (m.presenca + m.pontualidade + m.pagamento + m.convivencia) / 4;
 return Math.round((fisAvg * 0.25) + (tecAvg * 0.35) + (tatAvg * 0.25) + (cmpAvg * 0.15));
 };
 
-// Salvar Novo Atleta
+// Salvar Novo Atleta com Mapeamento Duplo
 const handleCreatePlayer = async () => {
 if (!newPlayerData.name.trim() || !newPlayerData.cpf.trim() || !newPlayerData.phone.trim()) {
 triggerToast("⚠️ Preencha Nome, CPF e Celular obrigatórios!");
@@ -333,9 +336,12 @@ const cleanCpf = newPlayerData.cpf.trim().replace(/\D/g, '').padStart(11, '0');
 
 const dbPayload = {
 name: newPlayerData.name.trim(),
+nome: newPlayerData.name.trim(),
 cpf: cleanCpf,
 phone: newPlayerData.phone.trim(),
+celular: newPlayerData.phone.trim(),
 pos: isGol ? 'GOL' : newPlayerData.pos,
+posicao: isGol ? 'GOL' : newPlayerData.pos,
 is_goleiro: isGol,
 combo: newPlayerData.combo,
 ovr: computedOvr,
@@ -347,27 +353,9 @@ selos: { deitou: 0, terno: 0, chover: 0, bagre: 0, inimigo: 0, tirica: 0 }
 const { data, error } = await supabase.from('atletas').insert([dbPayload]).select();
 
 if (!error && data && data.length > 0) {
-const createdPlayer = {
-id: data[0].id,
-name: data[0].name,
-cpf: cleanCpf,
-phone: data[0].phone,
-pos: data[0].pos,
-isGoleiro: data[0].is_goleiro,
-combo: data[0].combo,
-ovr: data[0].ovr,
-paid: data[0].paid,
-micro: data[0].micro,
-selos: data[0].selos
-};
-
-setPlayers(prev => [createdPlayer, ...prev]);
-setPresentPlayerIds(prev => [...prev, createdPlayer.id]);
-if (isGol) setGoalkeeperRatings(prev => ({ ...prev, [createdPlayer.id]: 7 }));
-
-setSelectedPlayerForPortal(createdPlayer);
+fetchAtletasFromSupabase();
 setActiveTab('portal');
-triggerToast(`✅ ${createdPlayer.name} cadastrado com OVR ${computedOvr}!`);
+triggerToast(`✅ ${newPlayerData.name} cadastrado com OVR ${computedOvr}!`);
 } else {
 triggerToast("⚠️ Erro ao salvar no Supabase: " + (error?.message || 'Erro de conexão'));
 }
