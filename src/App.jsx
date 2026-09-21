@@ -163,8 +163,8 @@ micro: { ...DEFAULT_MICRO }
 });
 
 const isEditingExistingPlayer = useMemo(() => {
-const clean = (newPlayerData.cpf || '').replace(/\D/g, '').padStart(11, '0');
-return clean.length === 11 && players.some(p => p.cpf === clean);
+const clean = String(newPlayerData.cpf || '').replace(/\D/g, '').padStart(11, '0');
+return clean.length === 11 && players.some(p => String(p.cpf) === clean);
 }, [newPlayerData.cpf, players]);
 
 useEffect(() => { fetchAtletasFromSupabase(); }, []);
@@ -180,18 +180,18 @@ const rawPos = item.pos || item.posicao || 'ATA';
 
 return {
 id: item.id,
-name: item.name || item.nome || 'Atleta',
-pos: rawPos,
-ovr: item.ovr || 75,
-isGoleiro: item.is_goleiro || item.isGoleiro || (rawPos === 'GOL'),
+name: String(item.name || item.nome || 'Atleta'),
+pos: String(rawPos),
+ovr: Number(item.ovr || 75),
+isGoleiro: Boolean(item.is_goleiro || item.isGoleiro || (rawPos === 'GOL')),
 cpf: String(item.cpf || item.CPF || '').replace(/\D/g, '').padStart(11, '0'),
-phone: item.phone || item.celular || '(00) 00000-0000',
-modalidade: item.modalidade || (item.combo ? 'combo' : 'avulso'),
-paid: item.paid !== undefined ? item.paid : true,
+phone: String(item.phone || item.celular || '(00) 00000-0000'),
+modalidade: String(item.modalidade || (item.combo ? 'combo' : 'avulso')),
+paid: item.paid !== undefined ? Boolean(item.paid) : true,
 photo: item.photo || null,
-totalGoals: item.totalGoals || 0,
-partidasJogadas: item.partidasJogadas || 8,
-vitorias: item.vitorias || 5,
+totalGoals: Number(item.totalGoals || 0),
+partidasJogadas: Number(item.partidasJogadas || 8),
+vitorias: Number(item.vitorias || 5),
 micro: { ...DEFAULT_MICRO, ...rawMicro },
 selos: { ...DEFAULT_SELOS, ...rawSelos }
 };
@@ -223,23 +223,23 @@ return ['beira', 'portal'];
 const handleLogin = (e) => {
 e.preventDefault();
 setIsLoggingIn(true); setLoginError('');
-const cleanUserCpf = cpfInput.replace(/\D/g, '').padStart(11, '0');
-const foundPlayer = players.find(p => p.cpf === cleanUserCpf);
+const cleanUserCpf = String(cpfInput || '').replace(/\D/g, '').padStart(11, '0');
+const foundPlayer = players.find(p => String(p.cpf) === cleanUserCpf);
 
 if (!foundPlayer) {
 setLoginError('CPF não cadastrado na base de atletas da pelada.');
 setIsLoggingIn(false); return;
 }
 
-const expectedPin = (foundPlayer.phone || '').replace(/\D/g, '').slice(-4);
+const expectedPin = String(foundPlayer.phone || '').replace(/\D/g, '').slice(-4);
 if (pinInput !== expectedPin && pinInput !== '1234') {
 setLoginError(`PIN incorreto. Use os 4 últimos dígitos do celular (${expectedPin || '1234'}).`);
 setIsLoggingIn(false); return;
 }
 
-// Blindagem de Login
 const safePlayer = {
 ...foundPlayer,
+cpf: String(foundPlayer.cpf || '').padStart(11, '0'),
 micro: { ...DEFAULT_MICRO, ...(foundPlayer.micro || {}) },
 selos: { ...DEFAULT_SELOS, ...(foundPlayer.selos || {}) }
 };
@@ -269,21 +269,21 @@ triggerToast("🔓 Lista Reaberta! Sorteio e Quadra BLOQUEADOS novamente.");
 
 const calculateOvrFromMicro = (m) => {
 const safeMicro = { ...DEFAULT_MICRO, ...(m || {}) };
-const fisAvg = (safeMicro.folego + safeMicro.velocidade + safeMicro.forca) / 3;
-const tecAvg = (safeMicro.controle + safeMicro.passe + safeMicro.finalizacao + safeMicro.marcacao) / 4;
-const tatAvg = (safeMicro.posicionamento + safeMicro.visao + safeMicro.raca) / 3;
-const cmpAvg = (safeMicro.presenca + safeMicro.pontualidade + safeMicro.pagamento + safeMicro.convivencia) / 4;
+const fisAvg = (Number(safeMicro.folego || 75) + Number(safeMicro.velocidade || 75) + Number(safeMicro.forca || 75)) / 3;
+const tecAvg = (Number(safeMicro.controle || 75) + Number(safeMicro.passe || 75) + Number(safeMicro.finalizacao || 75) + Number(safeMicro.marcacao || 75)) / 4;
+const tatAvg = (Number(safeMicro.posicionamento || 75) + Number(safeMicro.visao || 75) + Number(safeMicro.raca || 75)) / 3;
+const cmpAvg = (Number(safeMicro.presenca || 100) + Number(safeMicro.pontualidade || 100) + Number(safeMicro.pagamento || 100) + Number(safeMicro.convivencia || 100)) / 4;
 return Math.round((fisAvg * 0.25) + (tecAvg * 0.35) + (tatAvg * 0.25) + (cmpAvg * 0.15));
 };
 
 const handleCpfInputChange = (e) => {
-const rawVal = e.target.value;
+const rawVal = String(e.target.value || '');
 const clean = rawVal.replace(/\D/g, '').padStart(11, '0');
 
 setNewPlayerData(prev => {
 const updated = { ...prev, cpf: rawVal };
 if (clean.length === 11) {
-const found = players.find(p => p.cpf === clean);
+const found = players.find(p => String(p.cpf) === clean);
 if (found) {
 triggerToast(`🔍 Cadastro de ${found.name} localizado! Modo de Edição.`);
 return {
@@ -311,7 +311,7 @@ return;
 
 const computedOvr = calculateOvrFromMicro(newPlayerData.micro);
 const isGol = newPlayerData.isGoleiro || newPlayerData.pos === 'GOL';
-const cleanCpf = newPlayerData.cpf.trim().replace(/\D/g, '').padStart(11, '0');
+const cleanCpf = String(newPlayerData.cpf || '').trim().replace(/\D/g, '').padStart(11, '0');
 
 const dbPayload = {
 name: newPlayerData.name.trim(),
@@ -328,7 +328,7 @@ ovr: computedOvr,
 micro: newPlayerData.micro
 };
 
-const atletaExistente = players.find(p => p.cpf === cleanCpf);
+const atletaExistente = players.find(p => String(p.cpf) === cleanCpf);
 
 if (atletaExistente) {
 const { error } = await supabase.from('atletas').update(dbPayload).eq('id', atletaExistente.id);
@@ -518,7 +518,7 @@ texto += `------------------------------------------\n\n`;
 
 confirmados.forEach((atleta, index) => {
 const num = String(index + 1).padStart(2, '0');
-const cleanCpf = (atleta.cpf || '').padStart(11, '0');
+const cleanCpf = String(atleta.cpf || '').padStart(11, '0');
 const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 texto += `${num}. ${atleta.name} - CPF: ${formattedCpf}\n`;
 });
@@ -779,7 +779,7 @@ avulsos: confirmados.filter(p => p.modalidade === 'avulso').length,
 combos: confirmados.filter(p => p.modalidade === 'combo').length
 };
 
-// TELA DE LOGIN
+// RENDERIZAÇÃO: TELA DE LOGIN IDENTICA AO PRINT 1
 if (!currentUser) {
 return (
 <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white p-4 select-none">
@@ -874,7 +874,7 @@ FR
 <h1 className="font-black text-amber-400 text-xs uppercase tracking-wider">Futebol Raiz</h1>
 <p className="text-[10px] text-slate-400">
 {activeTab === 'diretoria' && 'Aba Diretoria • Gestão, Pacotes & Pix'}
-{activeTab === 'cadastro' && 'Aba Cadastro • 11 Micro-Atributos'}
+{activeTab === 'cadastro' && 'Aba Cadastro • Auto-Preenchimento e Edição'}
 {activeTab === 'sorteio' && 'Aba Sorteio • Nomes & Balanceamento'}
 {activeTab === 'beira' && 'Beira de Quadra • Cronômetro, Gols & Rodízio'}
 {activeTab === 'portal' && 'Portal do Atleta • Cartinha TOTY 3D & Resenha'}
@@ -1021,7 +1021,7 @@ return (
 <span>{p.name}</span>
 {p.isGoleiro ? <span className="text-[9px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded font-bold font-mono">GOL</span> : <span className="text-[9px] bg-slate-800 text-slate-400 px-1 py-0.5 rounded font-mono">{p.pos}</span>}
 </p>
-<p className="text-[10px] text-slate-400 truncate">CPF: {(p.cpf || '').padStart(11, '0').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}</p>
+<p className="text-[10px] text-slate-400 truncate">CPF: {String(p.cpf || '').padStart(11, '0').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}</p>
 </div>
 </div>
 
@@ -1144,9 +1144,8 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 <span className="text-3xl font-black text-amber-400 font-mono">{calculateOvrFromMicro(newPlayerData.micro)}</span>
 </div>
 
-{/* RESTAURAÇÃO: Todos os 11 Micro-atributos Sliders divididos em 4 blocos */}
+{/* 11 Micro-atributos Sliders */}
 <div className="space-y-3 pt-1">
-
 {/* 1. Físico */}
 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
 <span className="text-[11px] font-black text-amber-400 uppercase">1. Físico (25%):</span>
@@ -1194,7 +1193,6 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 </div>
 ))}
 </div>
-
 </div>
 
 <button
