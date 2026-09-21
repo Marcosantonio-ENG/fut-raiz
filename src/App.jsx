@@ -83,15 +83,18 @@ inimigo: { key: 'inimigo', label: 'Inimigo da Bola', emoji: '🚫', type: 'negat
 tirica: { key: 'tirica', label: 'Tiriça', emoji: '🐌', type: 'negative' }
 };
 
+const DEFAULT_MICRO = { folego: 75, velocidade: 75, forca: 75, controle: 75, passe: 75, finalizacao: 75, marcacao: 75, posicionamento: 75, visao: 75, raca: 75, presenca: 100, pontualidade: 100, pagamento: 100, convivencia: 100 };
+const DEFAULT_SELOS = { deitou: 0, terno: 0, chover: 0, bagre: 0, inimigo: 0, tirica: 0 };
+
 export default function FutRaizApp() {
-// Autenticação por CPF/PIN
+// Autenticação
 const [currentUser, setCurrentUser] = useState(null);
 const [cpfInput, setCpfInput] = useState('');
 const [pinInput, setPinInput] = useState('');
 const [loginError, setLoginError] = useState('');
 const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-// Estados do Elenco
+// Estados Globais
 const [activeTab, setActiveTab] = useState('diretoria');
 const [players, setPlayers] = useState([]);
 const [isLoading, setIsLoading] = useState(true);
@@ -156,12 +159,11 @@ const [showShareModal, setShowShareModal] = useState(false);
 // Cadastro de Atleta
 const [newPlayerData, setNewPlayerData] = useState({
 name: '', cpf: '', phone: '', pos: 'ATA', isGoleiro: false, modalidade: 'combo',
-micro: { folego: 75, velocidade: 75, forca: 75, controle: 75, passe: 75, finalizacao: 75, marcacao: 75, posicionamento: 75, visao: 75, raca: 75, presenca: 100, pontualidade: 100, pagamento: 100, convivencia: 100 }
+micro: { ...DEFAULT_MICRO }
 });
 
-// Detecta se o formulário está em modo de edição (CPF localizado)
 const isEditingExistingPlayer = useMemo(() => {
-const clean = newPlayerData.cpf.replace(/\D/g, '').padStart(11, '0');
+const clean = (newPlayerData.cpf || '').replace(/\D/g, '').padStart(11, '0');
 return clean.length === 11 && players.some(p => p.cpf === clean);
 }, [newPlayerData.cpf, players]);
 
@@ -171,12 +173,17 @@ async function fetchAtletasFromSupabase() {
 setIsLoading(true);
 const { data, error } = await supabase.from('atletas').select('*').order('created_at', { ascending: false });
 if (!error && data && data.length > 0) {
-const formatted = data.map(item => ({
+const formatted = data.map(item => {
+const rawMicro = item.micro || {};
+const rawSelos = item.selos || {};
+const rawPos = item.pos || item.posicao || 'ATA';
+
+return {
 id: item.id,
 name: item.name || item.nome || 'Atleta',
-pos: item.pos || item.posicao || 'ATA',
+pos: rawPos,
 ovr: item.ovr || 75,
-isGoleiro: item.is_goleiro || item.isGoleiro || ((item.pos || item.posicao) === 'GOL'),
+isGoleiro: item.is_goleiro || item.isGoleiro || (rawPos === 'GOL'),
 cpf: String(item.cpf || item.CPF || '').replace(/\D/g, '').padStart(11, '0'),
 phone: item.phone || item.celular || '(00) 00000-0000',
 modalidade: item.modalidade || (item.combo ? 'combo' : 'avulso'),
@@ -185,9 +192,11 @@ photo: item.photo || null,
 totalGoals: item.totalGoals || 0,
 partidasJogadas: item.partidasJogadas || 8,
 vitorias: item.vitorias || 5,
-micro: item.micro || { folego: 75, velocidade: 75, forca: 75, controle: 75, passe: 75, finalizacao: 75, marcacao: 75, posicionamento: 75, visao: 75, raca: 75, presenca: 100, pontualidade: 100, pagamento: 100, convivencia: 100 },
-selos: item.selos || { deitou: 0, terno: 0, chover: 0, bagre: 0, inimigo: 0, tirica: 0 }
-}));
+micro: { ...DEFAULT_MICRO, ...rawMicro },
+selos: { ...DEFAULT_SELOS, ...rawSelos }
+};
+});
+
 setPlayers(formatted);
 setPresentPlayerIds(formatted.map(p => p.id));
 setSelectedPlayerForPortal(formatted[0]);
@@ -206,7 +215,6 @@ setTimeout(() => setToastMessage(null), 3200);
 
 const getAvailableTabs = (cpf) => {
 const cleanCpf = String(cpf || '').replace(/\D/g, '').padStart(11, '0');
-// Diretoria liberada para CPFs de adm
 const adminCpfs = ['60354985310', '08445779958', '09375020908'];
 if (adminCpfs.includes(cleanCpf)) return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
 return ['beira', 'portal'];
@@ -217,21 +225,31 @@ e.preventDefault();
 setIsLoggingIn(true); setLoginError('');
 const cleanUserCpf = cpfInput.replace(/\D/g, '').padStart(11, '0');
 const foundPlayer = players.find(p => p.cpf === cleanUserCpf);
+
 if (!foundPlayer) {
 setLoginError('CPF não cadastrado na base de atletas da pelada.');
 setIsLoggingIn(false); return;
 }
-const expectedPin = foundPlayer.phone.replace(/\D/g, '').slice(-4);
+
+const expectedPin = (foundPlayer.phone || '').replace(/\D/g, '').slice(-4);
 if (pinInput !== expectedPin && pinInput !== '1234') {
-setLoginError(`PIN incorreto. Use os 4 últimos dígitos do celular cadastrado (${expectedPin}).`);
+setLoginError(`PIN incorreto. Use os 4 últimos dígitos do celular (${expectedPin || '1234'}).`);
 setIsLoggingIn(false); return;
 }
-setCurrentUser(foundPlayer);
-setSelectedPlayerForPortal(foundPlayer);
-const allowed = getAvailableTabs(foundPlayer.cpf);
+
+// Blindagem de Login
+const safePlayer = {
+...foundPlayer,
+micro: { ...DEFAULT_MICRO, ...(foundPlayer.micro || {}) },
+selos: { ...DEFAULT_SELOS, ...(foundPlayer.selos || {}) }
+};
+
+setCurrentUser(safePlayer);
+setSelectedPlayerForPortal(safePlayer);
+const allowed = getAvailableTabs(safePlayer.cpf);
 setActiveTab(allowed.includes('diretoria') ? 'diretoria' : allowed[0]);
 setIsLoggingIn(false);
-triggerToast(`⚽ Bem-vindo, ${foundPlayer.name}!`);
+triggerToast(`⚽ Bem-vindo, ${safePlayer.name}!`);
 };
 
 const handleToggleFecharLista = () => {
@@ -250,11 +268,11 @@ triggerToast("🔓 Lista Reaberta! Sorteio e Quadra BLOQUEADOS novamente.");
 };
 
 const calculateOvrFromMicro = (m) => {
-if (!m) return 75;
-const fisAvg = ((m.folego || 75) + (m.velocidade || 75) + (m.forca || 75)) / 3;
-const tecAvg = ((m.controle || 75) + (m.passe || 75) + (m.finalizacao || 75) + (m.marcacao || 75)) / 4;
-const tatAvg = ((m.posicionamento || 75) + (m.visao || 75) + (m.raca || 75)) / 3;
-const cmpAvg = ((m.presenca || 100) + (m.pontualidade || 100) + (m.pagamento || 100) + (m.convivencia || 100)) / 4;
+const safeMicro = { ...DEFAULT_MICRO, ...(m || {}) };
+const fisAvg = (safeMicro.folego + safeMicro.velocidade + safeMicro.forca) / 3;
+const tecAvg = (safeMicro.controle + safeMicro.passe + safeMicro.finalizacao + safeMicro.marcacao) / 4;
+const tatAvg = (safeMicro.posicionamento + safeMicro.visao + safeMicro.raca) / 3;
+const cmpAvg = (safeMicro.presenca + safeMicro.pontualidade + safeMicro.pagamento + safeMicro.convivencia) / 4;
 return Math.round((fisAvg * 0.25) + (tecAvg * 0.35) + (tatAvg * 0.25) + (cmpAvg * 0.15));
 };
 
@@ -275,7 +293,7 @@ phone: found.phone,
 pos: found.pos,
 isGoleiro: found.isGoleiro || found.pos === 'GOL',
 modalidade: found.modalidade || 'combo',
-micro: found.micro ? { ...found.micro } : prev.micro
+micro: { ...DEFAULT_MICRO, ...(found.micro || {}) }
 };
 }
 }
@@ -327,7 +345,7 @@ dbPayload.paid = true;
 dbPayload.totalGoals = 0;
 dbPayload.partidasJogadas = 1;
 dbPayload.vitorias = 1;
-dbPayload.selos = { deitou: 0, terno: 0, chover: 0, bagre: 0, inimigo: 0, tirica: 0 };
+dbPayload.selos = { ...DEFAULT_SELOS };
 
 const { error } = await supabase.from('atletas').insert([dbPayload]);
 if (!error) {
@@ -342,7 +360,7 @@ return;
 
 setNewPlayerData({
 name: '', cpf: '', phone: '', pos: 'ATA', isGoleiro: false, modalidade: 'combo',
-micro: { folego: 75, velocidade: 75, forca: 75, controle: 75, passe: 75, finalizacao: 75, marcacao: 75, posicionamento: 75, visao: 75, raca: 75, presenca: 100, pontualidade: 100, pagamento: 100, convivencia: 100 }
+micro: { ...DEFAULT_MICRO }
 });
 };
 
@@ -371,8 +389,8 @@ photo: null,
 totalGoals: 0,
 partidasJogadas: 1,
 vitorias: 1,
-micro: { folego: 80, velocidade: 75, forca: 85, controle: 80, passe: 80, finalizacao: 30, marcacao: 80, posicionamento: 85, visao: 85, raca: 90, presenca: 100, pontualidade: 100, pagamento: 100, convivencia: 90 },
-selos: { deitou: 0, terno: 0, chover: 0, bagre: 0, inimigo: 0, tirica: 0 }
+micro: { ...DEFAULT_MICRO },
+selos: { ...DEFAULT_SELOS }
 };
 
 setPlayers(prev => [guestGk, ...prev]);
@@ -500,7 +518,7 @@ texto += `------------------------------------------\n\n`;
 
 confirmados.forEach((atleta, index) => {
 const num = String(index + 1).padStart(2, '0');
-const cleanCpf = atleta.cpf.padStart(11, '0');
+const cleanCpf = (atleta.cpf || '').padStart(11, '0');
 const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 texto += `${num}. ${atleta.name} - CPF: ${formattedCpf}\n`;
 });
@@ -750,7 +768,18 @@ setShowVoteConfirmModal(false); setVotingTargetPlayer(null); setPendingBadge(nul
 triggerToast(`✅ Avaliação de "${badge.label}" gravada para ${target.name}!`);
 };
 
-// RENDERIZAÇÃO: TELA DE LOGIN IDENTICA AO PRINT 1
+// Cálculos Financeiros
+const confirmados = players.filter(p => presentPlayerIds.includes(p.id));
+const totalCombo = financeConfig.valorJogo + financeConfig.valorChurrasco;
+const caixaArrecadado = confirmados.filter(p => p.paid).reduce((acc, p) => acc + getValorAtleta(p.modalidade), 0);
+const caixaPendente = confirmados.filter(p => !p.paid).reduce((acc, p) => acc + getValorAtleta(p.modalidade), 0);
+const contagemModalidades = {
+mensalistas: confirmados.filter(p => p.modalidade === 'mensalista').length,
+avulsos: confirmados.filter(p => p.modalidade === 'avulso').length,
+combos: confirmados.filter(p => p.modalidade === 'combo').length
+};
+
+// TELA DE LOGIN
 if (!currentUser) {
 return (
 <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white p-4 select-none">
@@ -845,7 +874,7 @@ FR
 <h1 className="font-black text-amber-400 text-xs uppercase tracking-wider">Futebol Raiz</h1>
 <p className="text-[10px] text-slate-400">
 {activeTab === 'diretoria' && 'Aba Diretoria • Gestão, Pacotes & Pix'}
-{activeTab === 'cadastro' && 'Aba Cadastro • Auto-Preenchimento e Edição'}
+{activeTab === 'cadastro' && 'Aba Cadastro • 11 Micro-Atributos'}
 {activeTab === 'sorteio' && 'Aba Sorteio • Nomes & Balanceamento'}
 {activeTab === 'beira' && 'Beira de Quadra • Cronômetro, Gols & Rodízio'}
 {activeTab === 'portal' && 'Portal do Atleta • Cartinha TOTY 3D & Resenha'}
@@ -992,7 +1021,7 @@ return (
 <span>{p.name}</span>
 {p.isGoleiro ? <span className="text-[9px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded font-bold font-mono">GOL</span> : <span className="text-[9px] bg-slate-800 text-slate-400 px-1 py-0.5 rounded font-mono">{p.pos}</span>}
 </p>
-<p className="text-[10px] text-slate-400 truncate">CPF: {p.cpf.padStart(11, '0').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}</p>
+<p className="text-[10px] text-slate-400 truncate">CPF: {(p.cpf || '').padStart(11, '0').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}</p>
 </div>
 </div>
 
@@ -1124,8 +1153,8 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 {[{ key: 'folego', label: 'Fôlego' }, { key: 'velocidade', label: 'Velocidade' }, { key: 'forca', label: 'Força' }].map(attr => (
 <div key={attr.key} className="flex items-center gap-2 text-xs">
 <span className="w-36 text-slate-400 text-[10px] truncate">{attr.label}</span>
-<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key]} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
-<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key]}</span>
+<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key] || 75} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
+<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key] || 75}</span>
 </div>
 ))}
 </div>
@@ -1136,8 +1165,8 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 {[{ key: 'controle', label: 'Controle' }, { key: 'passe', label: 'Passe' }, { key: 'finalizacao', label: 'Finalização' }, { key: 'marcacao', label: 'Marcação' }].map(attr => (
 <div key={attr.key} className="flex items-center gap-2 text-xs">
 <span className="w-36 text-slate-400 text-[10px] truncate">{attr.label}</span>
-<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key]} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
-<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key]}</span>
+<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key] || 75} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
+<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key] || 75}</span>
 </div>
 ))}
 </div>
@@ -1148,8 +1177,8 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 {[{ key: 'posicionamento', label: 'Posicionamento' }, { key: 'visao', label: 'Visão de Jogo' }, { key: 'raca', label: 'Raça / Vontade' }].map(attr => (
 <div key={attr.key} className="flex items-center gap-2 text-xs">
 <span className="w-36 text-slate-400 text-[10px] truncate">{attr.label}</span>
-<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key]} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
-<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key]}</span>
+<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key] || 75} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
+<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key] || 75}</span>
 </div>
 ))}
 </div>
@@ -1160,8 +1189,8 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 {[{ key: 'presenca', label: 'Presença' }, { key: 'pontualidade', label: 'Pontualidade' }, { key: 'pagamento', label: 'Pagamento' }, { key: 'convivencia', label: 'Convivência' }].map(attr => (
 <div key={attr.key} className="flex items-center gap-2 text-xs">
 <span className="w-36 text-slate-400 text-[10px] truncate">{attr.label}</span>
-<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key]} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
-<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key]}</span>
+<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key] || 100} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
+<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key] || 100}</span>
 </div>
 ))}
 </div>
@@ -1413,43 +1442,43 @@ if (found) { setSelectedPlayerForPortal(found); setIsCardFlipped(false); }
 
 <div className="flex justify-between items-start z-10 pt-1 px-1">
 <div className="flex flex-col items-center w-16">
-<span className="text-[3.4rem] font-black text-[#fef0cd] tracking-tighter leading-none drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)]">{selectedPlayerForPortal.ovr}</span>
-<span className="text-sm font-black text-[#f3cf73] tracking-widest -mt-0.5 drop-shadow">{selectedPlayerForPortal.pos}</span>
+<span className="text-[3.4rem] font-black text-[#fef0cd] tracking-tighter leading-none drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)]">{selectedPlayerForPortal?.ovr || 75}</span>
+<span className="text-sm font-black text-[#f3cf73] tracking-widest -mt-0.5 drop-shadow">{selectedPlayerForPortal?.pos || 'ATA'}</span>
 <div className="my-1.5 rounded-[2px] border border-[#e5c062]/80 overflow-hidden shadow-md flex items-center justify-center"><BrazilFlagIcon className="w-8 h-5" /></div>
 <div className="mt-0.5"><ClubCrestIcon className="w-8 h-9" /></div>
 </div>
 
 <div className="relative group">
 <div className="w-32 h-32 rounded-full bg-gradient-to-b from-blue-900/60 to-slate-950 border-[2.5px] border-[#f6ce65] flex items-center justify-center shadow-[0_0_25px_rgba(246,206,101,0.4)] relative overflow-hidden mt-1 mr-1">
-{selectedPlayerForPortal.photo ? (
+{selectedPlayerForPortal?.photo ? (
 <img src={selectedPlayerForPortal.photo} alt={selectedPlayerForPortal.name} className="w-full h-full object-cover object-top" />
 ) : <span className="text-6xl drop-shadow-lg">⚽</span>}
 <label onClick={(e) => e.stopPropagation()} className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-amber-300 text-[10px] font-black cursor-pointer transition">
 <CameraIcon className="w-5 h-5 mb-0.5" /><span>Trocar Foto</span>
-<input type="file" accept="image/*" className="hidden" onChange={(e) => handlePhotoUpload(e, selectedPlayerForPortal.id)} />
+<input type="file" accept="image/*" className="hidden" onChange={(e) => handlePhotoUpload(e, selectedPlayerForPortal?.id)} />
 </label>
 </div>
 <label onClick={(e) => e.stopPropagation()} title="Carregar foto do atleta" className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 p-1.5 rounded-full border border-amber-300 shadow-md cursor-pointer hover:bg-amber-300 active:scale-95 transition">
 <CameraIcon className="w-3.5 h-3.5" />
-<input type="file" accept="image/*" className="hidden" onChange={(e) => handlePhotoUpload(e, selectedPlayerForPortal.id)} />
+<input type="file" accept="image/*" className="hidden" onChange={(e) => handlePhotoUpload(e, selectedPlayerForPortal?.id)} />
 </label>
 </div>
 </div>
 
-<div className="z-10 my-0.5 bg-gradient-to-r from-[#875807] via-[#fff1b8] to-[#875807] text-slate-950 text-center py-1 font-black text-base uppercase tracking-widest rounded border-y border-[#ffffff] mx-1">{selectedPlayerForPortal.name}</div>
+<div className="z-10 my-0.5 bg-gradient-to-r from-[#875807] via-[#fff1b8] to-[#875807] text-slate-950 text-center py-1 font-black text-base uppercase tracking-widest rounded border-y border-[#ffffff] mx-1">{selectedPlayerForPortal?.name || 'Atleta'}</div>
 
 <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs font-mono font-bold z-10 px-4 py-2 bg-slate-950/85 rounded-xl border border-[#e5c062]/50 mx-1">
-<div className="flex justify-between"><span className="text-slate-400">PAC</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal.micro?.velocidade || 75}</span></div>
-<div className="flex justify-between"><span className="text-slate-400">DRI</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal.micro?.controle || 75}</span></div>
-<div className="flex justify-between"><span className="text-slate-400">SHO</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal.micro?.finalizacao || 75}</span></div>
-<div className="flex justify-between"><span className="text-slate-400">DEF</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal.micro?.marcacao || 75}</span></div>
-<div className="flex justify-between"><span className="text-slate-400">PAS</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal.micro?.passe || 75}</span></div>
-<div className="flex justify-between"><span className="text-slate-400">PHY</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal.micro?.forca || 75}</span></div>
+<div className="flex justify-between"><span className="text-slate-400">PAC</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal?.micro?.velocidade || 75}</span></div>
+<div className="flex justify-between"><span className="text-slate-400">DRI</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal?.micro?.controle || 75}</span></div>
+<div className="flex justify-between"><span className="text-slate-400">SHO</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal?.micro?.finalizacao || 75}</span></div>
+<div className="flex justify-between"><span className="text-slate-400">DEF</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal?.micro?.marcacao || 75}</span></div>
+<div className="flex justify-between"><span className="text-slate-400">PAS</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal?.micro?.passe || 75}</span></div>
+<div className="flex justify-between"><span className="text-slate-400">PHY</span><span className="text-[#fef0cd] font-black">{selectedPlayerForPortal?.micro?.forca || 75}</span></div>
 </div>
 
 <div className="z-10 flex justify-center gap-1.5 py-0.5">
-{Object.keys(selectedPlayerForPortal.selos || {}).map(key => {
-const count = selectedPlayerForPortal.selos[key];
+{Object.keys(selectedPlayerForPortal?.selos || {}).map(key => {
+const count = selectedPlayerForPortal?.selos?.[key];
 if (!count || count === 0) return null;
 return <span key={key} className="text-[11px] bg-slate-950/90 border border-amber-500/50 px-2 py-0.5 rounded-full font-bold">{BADGES_CONFIG[key]?.emoji} x{count}</span>;
 })}
@@ -1470,37 +1499,37 @@ return <span key={key} className="text-[11px] bg-slate-950/90 border border-ambe
 <div className="absolute inset-0 bg-[radial-gradient(#e5c062_1.3px,transparent_1.3px)] [background-size:12px_12px] opacity-15 pointer-events-none" />
 <div className="z-10 border-b border-amber-500/40 pb-2 text-center">
 <span className="text-[10px] text-amber-400 font-bold uppercase tracking-widest block">Resumo Macro da Temporada</span>
-<h4 className="text-base font-black text-white truncate">{selectedPlayerForPortal.name}</h4>
+<h4 className="text-base font-black text-white truncate">{selectedPlayerForPortal?.name}</h4>
 </div>
 <div className="grid grid-cols-3 gap-1.5 z-10 my-1">
-<div className="bg-slate-950/90 border border-amber-500/40 p-2 rounded-xl text-center"><span className="text-[9px] text-slate-400 font-bold block uppercase">Gols</span><span className="text-xl font-black text-amber-400 font-mono leading-tight">⚽ {selectedPlayerForPortal.totalGoals || 0}</span></div>
-<div className="bg-slate-950/90 border border-slate-800 p-2 rounded-xl text-center"><span className="text-[9px] text-slate-400 font-bold block uppercase">Jogos</span><span className="text-xl font-black text-emerald-400 font-mono leading-tight">{selectedPlayerForPortal.partidasJogadas || 8}</span></div>
-<div className="bg-slate-950/90 border border-slate-800 p-2 rounded-xl text-center"><span className="text-[9px] text-slate-400 font-bold block uppercase">Aprov.</span><span className="text-xl font-black text-cyan-400 font-mono leading-tight">{Math.round(((selectedPlayerForPortal.vitorias || 5) / (selectedPlayerForPortal.partidasJogadas || 8)) * 100)}%</span></div>
+<div className="bg-slate-950/90 border border-amber-500/40 p-2 rounded-xl text-center"><span className="text-[9px] text-slate-400 font-bold block uppercase">Gols</span><span className="text-xl font-black text-amber-400 font-mono leading-tight">⚽ {selectedPlayerForPortal?.totalGoals || 0}</span></div>
+<div className="bg-slate-950/90 border border-slate-800 p-2 rounded-xl text-center"><span className="text-[9px] text-slate-400 font-bold block uppercase">Jogos</span><span className="text-xl font-black text-emerald-400 font-mono leading-tight">{selectedPlayerForPortal?.partidasJogadas || 8}</span></div>
+<div className="bg-slate-950/90 border border-slate-800 p-2 rounded-xl text-center"><span className="text-[9px] text-slate-400 font-bold block uppercase">Aprov.</span><span className="text-xl font-black text-cyan-400 font-mono leading-tight">{Math.round(((selectedPlayerForPortal?.vitorias || 5) / (selectedPlayerForPortal?.partidasJogadas || 8)) * 100)}%</span></div>
 </div>
 
 <div className="space-y-1.5 z-10 bg-slate-950/90 p-2.5 rounded-xl border border-amber-500/30">
 <span className="text-[9px] font-black uppercase text-amber-400 tracking-wider block mb-1">Pilares de Habilidade:</span>
 <div>
-<div className="flex justify-between text-[10px] font-bold"><span className="text-slate-300">Físico</span><span className="text-amber-400 font-mono">{Math.round(((selectedPlayerForPortal.micro?.folego || 75) + (selectedPlayerForPortal.micro?.velocidade || 75) + (selectedPlayerForPortal.micro?.forca || 75)) / 3)}</span></div>
-<div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-0.5"><div className="bg-gradient-to-r from-amber-500 to-amber-400 h-full rounded-full" style={{ width: `${Math.round(((selectedPlayerForPortal.micro?.folego || 75) + (selectedPlayerForPortal.micro?.velocidade || 75) + (selectedPlayerForPortal.micro?.forca || 75)) / 3)}%` }} /></div>
+<div className="flex justify-between text-[10px] font-bold"><span className="text-slate-300">Físico</span><span className="text-amber-400 font-mono">{Math.round(((selectedPlayerForPortal?.micro?.folego || 75) + (selectedPlayerForPortal?.micro?.velocidade || 75) + (selectedPlayerForPortal?.micro?.forca || 75)) / 3)}</span></div>
+<div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-0.5"><div className="bg-gradient-to-r from-amber-500 to-amber-400 h-full rounded-full" style={{ width: `${Math.round(((selectedPlayerForPortal?.micro?.folego || 75) + (selectedPlayerForPortal?.micro?.velocidade || 75) + (selectedPlayerForPortal?.micro?.forca || 75)) / 3)}%` }} /></div>
 </div>
 <div>
-<div className="flex justify-between text-[10px] font-bold"><span className="text-slate-300">Técnico</span><span className="text-amber-400 font-mono">{Math.round(((selectedPlayerForPortal.micro?.controle || 75) + (selectedPlayerForPortal.micro?.passe || 75) + (selectedPlayerForPortal.micro?.finalizacao || 75) + (selectedPlayerForPortal.micro?.marcacao || 75)) / 4)}</span></div>
-<div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-0.5"><div className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-full rounded-full" style={{ width: `${Math.round(((selectedPlayerForPortal.micro?.controle || 75) + (selectedPlayerForPortal.micro?.passe || 75) + (selectedPlayerForPortal.micro?.finalizacao || 75) + (selectedPlayerForPortal.micro?.marcacao || 75)) / 4)}%` }} /></div>
+<div className="flex justify-between text-[10px] font-bold"><span className="text-slate-300">Técnico</span><span className="text-amber-400 font-mono">{Math.round(((selectedPlayerForPortal?.micro?.controle || 75) + (selectedPlayerForPortal?.micro?.passe || 75) + (selectedPlayerForPortal?.micro?.finalizacao || 75) + (selectedPlayerForPortal?.micro?.marcacao || 75)) / 4)}</span></div>
+<div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-0.5"><div className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-full rounded-full" style={{ width: `${Math.round(((selectedPlayerForPortal?.micro?.controle || 75) + (selectedPlayerForPortal?.micro?.passe || 75) + (selectedPlayerForPortal?.micro?.finalizacao || 75) + (selectedPlayerForPortal?.micro?.marcacao || 75)) / 4)}%` }} /></div>
 </div>
 <div>
-<div className="flex justify-between text-[10px] font-bold"><span className="text-slate-300">Tático</span><span className="text-amber-400 font-mono">{Math.round(((selectedPlayerForPortal.micro?.posicionamento || 75) + (selectedPlayerForPortal.micro?.visao || 75) + (selectedPlayerForPortal.micro?.raca || 75)) / 3)}</span></div>
-<div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-0.5"><div className="bg-gradient-to-r from-cyan-500 to-cyan-400 h-full rounded-full" style={{ width: `${Math.round(((selectedPlayerForPortal.micro?.posicionamento || 75) + (selectedPlayerForPortal.micro?.visao || 75) + (selectedPlayerForPortal.micro?.raca || 75)) / 3)}%` }} /></div>
+<div className="flex justify-between text-[10px] font-bold"><span className="text-slate-300">Tático</span><span className="text-amber-400 font-mono">{Math.round(((selectedPlayerForPortal?.micro?.posicionamento || 75) + (selectedPlayerForPortal?.micro?.visao || 75) + (selectedPlayerForPortal?.micro?.raca || 75)) / 3)}</span></div>
+<div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-0.5"><div className="bg-gradient-to-r from-cyan-500 to-cyan-400 h-full rounded-full" style={{ width: `${Math.round(((selectedPlayerForPortal?.micro?.posicionamento || 75) + (selectedPlayerForPortal?.micro?.visao || 75) + (selectedPlayerForPortal?.micro?.raca || 75)) / 3)}%` }} /></div>
 </div>
 </div>
 
 <div className="z-10 bg-slate-950/90 p-2 rounded-xl border border-slate-800 space-y-1">
 <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Reconhecimento da Turma:</span>
 <div className="grid grid-cols-2 gap-1 text-[10px]">
-<div className="flex items-center gap-1 text-emerald-400 font-bold"><span>👑 Deitou:</span><span className="text-white font-mono">{selectedPlayerForPortal.selos?.deitou || 0}</span></div>
-<div className="flex items-center gap-1 text-emerald-400 font-bold"><span>👔 Terno:</span><span className="text-white font-mono">{selectedPlayerForPortal.selos?.terno || 0}</span></div>
-<div className="flex items-center gap-1 text-emerald-400 font-bold"><span>🌧️ Chover:</span><span className="text-white font-mono">{selectedPlayerForPortal.selos?.chover || 0}</span></div>
-<div className="flex items-center gap-1 text-rose-400 font-bold"><span>🐟 Bagre:</span><span className="text-white font-mono">{selectedPlayerForPortal.selos?.bagre || 0}</span></div>
+<div className="flex items-center gap-1 text-emerald-400 font-bold"><span>👑 Deitou:</span><span className="text-white font-mono">{selectedPlayerForPortal?.selos?.deitou || 0}</span></div>
+<div className="flex items-center gap-1 text-emerald-400 font-bold"><span>👔 Terno:</span><span className="text-white font-mono">{selectedPlayerForPortal?.selos?.terno || 0}</span></div>
+<div className="flex items-center gap-1 text-emerald-400 font-bold"><span>🌧️ Chover:</span><span className="text-white font-mono">{selectedPlayerForPortal?.selos?.chover || 0}</span></div>
+<div className="flex items-center gap-1 text-rose-400 font-bold"><span>🐟 Bagre:</span><span className="text-white font-mono">{selectedPlayerForPortal?.selos?.bagre || 0}</span></div>
 </div>
 </div>
 <div className="text-center z-10 text-[9px] text-[#f6ce65] uppercase tracking-widest font-black pb-3">TOQUE NOVAMENTE PARA VIRAR</div>
@@ -1675,7 +1704,7 @@ copyTextToClipboard(whatsappModal.text, "📋 Mensagem copiada com sucesso!");
 </div>
 )}
 
-{/* BARRA DE NAVEGAÇÃO INFERIOR COM TODAS AS ABAS */}
+{/* BARRA DE NAVEGAÇÃO INFERIOR */}
 <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-1.5 py-2 flex justify-around items-center z-40 max-w-md mx-auto">
 {allowedTabs.includes('diretoria') && (
 <button onClick={() => setActiveTab('diretoria')} className={`flex flex-col items-center gap-1 px-2 py-1 rounded-xl transition ${activeTab === 'diretoria' ? 'text-amber-400 font-black' : 'text-slate-500'}`}>
