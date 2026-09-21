@@ -206,9 +206,10 @@ setTimeout(() => setToastMessage(null), 3200);
 
 const getAvailableTabs = (cpf) => {
 const cleanCpf = String(cpf || '').replace(/\D/g, '').padStart(11, '0');
-if (cleanCpf === '60354985310') return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
-if (cleanCpf === '08445779958') return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
-if (cleanCpf === '09375020908') return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
+// Diretoria liberada para CPFs de adm
+const adminCpfs = ['60354985310', '08445779958', '09375020908'];
+if (adminCpfs.includes(cleanCpf)) return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
+return ['beira', 'portal'];
 };
 
 const handleLogin = (e) => {
@@ -257,7 +258,6 @@ const cmpAvg = ((m.presenca || 100) + (m.pontualidade || 100) + (m.pagamento || 
 return Math.round((fisAvg * 0.25) + (tecAvg * 0.35) + (tatAvg * 0.25) + (cmpAvg * 0.15));
 };
 
-// Manipula a digitação do CPF com Auto-Preenchimento Inteligente
 const handleCpfInputChange = (e) => {
 const rawVal = e.target.value;
 const clean = rawVal.replace(/\D/g, '').padStart(11, '0');
@@ -283,7 +283,6 @@ return updated;
 });
 };
 
-// Upsert Inteligente (Insert ou Update)
 const handleCadastrarNovoAtleta = async (e) => {
 if (e) e.preventDefault();
 
@@ -314,12 +313,7 @@ micro: newPlayerData.micro
 const atletaExistente = players.find(p => p.cpf === cleanCpf);
 
 if (atletaExistente) {
-// 🔄 ATUALIZAÇÃO (UPDATE)
-const { error } = await supabase
-.from('atletas')
-.update(dbPayload)
-.eq('id', atletaExistente.id);
-
+const { error } = await supabase.from('atletas').update(dbPayload).eq('id', atletaExistente.id);
 if (!error) {
 await fetchAtletasFromSupabase();
 setActiveTab('diretoria');
@@ -329,17 +323,13 @@ triggerToast("⚠️ Erro ao atualizar no Supabase: " + (error?.message || 'Erro
 return;
 }
 } else {
-// ➕ NOVO CADASTRO (INSERT)
 dbPayload.paid = true;
 dbPayload.totalGoals = 0;
 dbPayload.partidasJogadas = 1;
 dbPayload.vitorias = 1;
 dbPayload.selos = { deitou: 0, terno: 0, chover: 0, bagre: 0, inimigo: 0, tirica: 0 };
 
-const { error } = await supabase
-.from('atletas')
-.insert([dbPayload]);
-
+const { error } = await supabase.from('atletas').insert([dbPayload]);
 if (!error) {
 await fetchAtletasFromSupabase();
 setActiveTab('diretoria');
@@ -760,17 +750,6 @@ setShowVoteConfirmModal(false); setVotingTargetPlayer(null); setPendingBadge(nul
 triggerToast(`✅ Avaliação de "${badge.label}" gravada para ${target.name}!`);
 };
 
-// Cálculos Financeiros Dinâmicos
-const confirmados = players.filter(p => presentPlayerIds.includes(p.id));
-const totalCombo = financeConfig.valorJogo + financeConfig.valorChurrasco;
-const caixaArrecadado = confirmados.filter(p => p.paid).reduce((acc, p) => acc + getValorAtleta(p.modalidade), 0);
-const caixaPendente = confirmados.filter(p => !p.paid).reduce((acc, p) => acc + getValorAtleta(p.modalidade), 0);
-const contagemModalidades = {
-mensalistas: confirmados.filter(p => p.modalidade === 'mensalista').length,
-avulsos: confirmados.filter(p => p.modalidade === 'avulso').length,
-combos: confirmados.filter(p => p.modalidade === 'combo').length
-};
-
 // RENDERIZAÇÃO: TELA DE LOGIN IDENTICA AO PRINT 1
 if (!currentUser) {
 return (
@@ -1052,7 +1031,6 @@ className={`text-[10px] font-bold px-2 py-1.5 rounded-lg border outline-none bg-
 </p>
 </div>
 
-{/* BANNER DE MODO DE EDIÇÃO */}
 {isEditingExistingPlayer && (
 <div className="bg-cyan-500/10 border border-cyan-500/40 p-3 rounded-2xl flex items-center justify-between gap-2 text-xs text-cyan-300">
 <div className="flex items-center gap-2">
@@ -1129,7 +1107,6 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 </div>
 </div>
 
-{/* Card OVR Dinâmico */}
 <div className="bg-slate-950 p-3 rounded-xl border border-amber-500/40 flex justify-between items-center shadow-inner">
 <div>
 <span className="text-xs text-slate-300 font-bold block">OVR Geral Calculado:</span>
@@ -1138,8 +1115,10 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 <span className="text-3xl font-black text-amber-400 font-mono">{calculateOvrFromMicro(newPlayerData.micro)}</span>
 </div>
 
-{/* Micro-atributos Sliders */}
+{/* RESTAURAÇÃO: Todos os 11 Micro-atributos Sliders divididos em 4 blocos */}
 <div className="space-y-3 pt-1">
+
+{/* 1. Físico */}
 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
 <span className="text-[11px] font-black text-amber-400 uppercase">1. Físico (25%):</span>
 {[{ key: 'folego', label: 'Fôlego' }, { key: 'velocidade', label: 'Velocidade' }, { key: 'forca', label: 'Força' }].map(attr => (
@@ -1151,6 +1130,7 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 ))}
 </div>
 
+{/* 2. Técnico */}
 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
 <span className="text-[11px] font-black text-amber-400 uppercase">2. Técnico (35%):</span>
 {[{ key: 'controle', label: 'Controle' }, { key: 'passe', label: 'Passe' }, { key: 'finalizacao', label: 'Finalização' }, { key: 'marcacao', label: 'Marcação' }].map(attr => (
@@ -1161,6 +1141,31 @@ className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl te
 </div>
 ))}
 </div>
+
+{/* 3. Tático */}
+<div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+<span className="text-[11px] font-black text-amber-400 uppercase">3. Tático (25%):</span>
+{[{ key: 'posicionamento', label: 'Posicionamento' }, { key: 'visao', label: 'Visão de Jogo' }, { key: 'raca', label: 'Raça / Vontade' }].map(attr => (
+<div key={attr.key} className="flex items-center gap-2 text-xs">
+<span className="w-36 text-slate-400 text-[10px] truncate">{attr.label}</span>
+<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key]} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
+<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key]}</span>
+</div>
+))}
+</div>
+
+{/* 4. Comportamental */}
+<div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+<span className="text-[11px] font-black text-amber-400 uppercase">4. Comportamental (15%):</span>
+{[{ key: 'presenca', label: 'Presença' }, { key: 'pontualidade', label: 'Pontualidade' }, { key: 'pagamento', label: 'Pagamento' }, { key: 'convivencia', label: 'Convivência' }].map(attr => (
+<div key={attr.key} className="flex items-center gap-2 text-xs">
+<span className="w-36 text-slate-400 text-[10px] truncate">{attr.label}</span>
+<input type="range" min="1" max="99" value={newPlayerData.micro[attr.key]} onChange={e => setNewPlayerData({ ...newPlayerData, micro: { ...newPlayerData.micro, [attr.key]: parseInt(e.target.value) } })} className="flex-1 accent-amber-400 h-1.5 bg-slate-800 rounded cursor-pointer" />
+<span className="w-6 text-right font-mono font-bold text-amber-400">{newPlayerData.micro[attr.key]}</span>
+</div>
+))}
+</div>
+
 </div>
 
 <button
@@ -1670,7 +1675,7 @@ copyTextToClipboard(whatsappModal.text, "📋 Mensagem copiada com sucesso!");
 </div>
 )}
 
-{/* BARRA DE NAVEGAÇÃO INFERIOR */}
+{/* BARRA DE NAVEGAÇÃO INFERIOR COM TODAS AS ABAS */}
 <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-1.5 py-2 flex justify-around items-center z-40 max-w-md mx-auto">
 {allowedTabs.includes('diretoria') && (
 <button onClick={() => setActiveTab('diretoria')} className={`flex flex-col items-center gap-1 px-2 py-1 rounded-xl transition ${activeTab === 'diretoria' ? 'text-amber-400 font-black' : 'text-slate-500'}`}>
