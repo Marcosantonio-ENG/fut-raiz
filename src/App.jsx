@@ -207,8 +207,8 @@ setTimeout(() => setToastMessage(null), 3200);
 const getAvailableTabs = (cpf) => {
 const cleanCpf = String(cpf || '').replace(/\D/g, '').padStart(11, '0');
 if (cleanCpf === '60354985310') return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
-if (cleanCpf === '08445779958' || cleanCpf === '09375020908') return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
-return ['beira', 'portal'];
+if (cleanCpf === '08445779958') return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
+if (cleanCpf === '09375020908') return ['diretoria', 'cadastro', 'motor', 'beira', 'portal'];
 };
 
 const handleLogin = (e) => {
